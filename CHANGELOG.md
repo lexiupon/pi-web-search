@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-05-24
+
+- Fixed warnings from `npm audit`
+- Upgraded dependencies to the latest versions
+
 ## [0.1.0] - 2026-05-24
 
 Initial release as `@alexion42/pi-web-search`.
