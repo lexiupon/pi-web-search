@@ -1,0 +1,46 @@
+{
+  "name": "@alexion42/pi-web-search",
+  "version": "0.1.0",
+  "description": "Exa-powered web search and content extraction for Pi coding agent",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "extension",
+    "web-search",
+    "exa",
+    "fetch",
+    "scraping"
+  ],
+  "author": "Alexion Fortytwo <alexion@lexiupon.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicobailon/pi-web-access.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nicobailon/pi-web-access/issues"
+  },
+  "homepage": "https://github.com/nicobailon/pi-web-access#readme",
+  "dependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "linkedom": "^0.16.0",
+    "p-limit": "^6.1.0",
+    "turndown": "^7.2.0",
+    "unpdf": "^1.6.2"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": ">=0.6.0",
+    "@mariozechner/pi-coding-agent": ">=0.37.3",
+    "@mariozechner/pi-tui": ">=0.37.3"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
