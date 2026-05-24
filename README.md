@@ -25,11 +25,8 @@ Requires Pi v0.37.3+.
 
 | Tool | Description |
 |------|-------------|
-| `web_search` | Search the web via Exa with synthesized answers and source citations |
-| `code_search` | Search for code examples, docs, and API references via Exa MCP |
-| `fetch_content` | Extract readable content from URLs, GitHub repos (cloned locally), and PDFs |
-| `get_search_content` | Retrieve stored content from previous searches or fetches |
-| `/search` | Interactive command to browse stored search results |
+| `web` | Single web tool: `mode: "search"` finds sources, `mode: "read"` reads one known URL, `mode: "get"` reloads a stored result by `resultId` |
+| `/search` | Interactive command to browse stored web results |
 | Activity monitor | `Ctrl+Shift+W` to view live request/response activity |
 
 Content extraction uses a robust fallback chain: Readability → RSC parser → Jina Reader. Full parameter reference and examples are in [TOOLS.md](./TOOLS.md).
@@ -58,14 +55,17 @@ All config lives in `~/.pi/web-search.json`. Every field is optional.
 ## How It Works
 
 ```
-web_search(query)
+web({ mode: "search", query })
   → Exa (direct API with key, MCP without)
 
-fetch_content(url)
+web({ mode: "read", url })
   → GitHub URL?  Clone repo, return file contents + local path
   → HTTP fetch → PDF? Extract text, save to ~/Downloads/
                → HTML? Readability → RSC parser → Jina Reader
                → Text/JSON/Markdown? Return directly
+
+web({ mode: "get", resultId })
+  → Load stored search or URL-read results from the current session
 ```
 
 ## Limitations
@@ -85,4 +85,4 @@ fetch_content(url)
 | [iaptsiauri/pi-surf](https://github.com/iaptsiauri/pi-surf) | Brave + custom providers | Scout subagent, pluggable providers |
 | [NicoAvanzDev/pi-web-extension](https://github.com/NicoAvanzDev/pi-web-extension) | Brave, DDG (keyless) | Prompt steering, token-aware |
 
-This project's niche: **GitHub cloning + Exa MCP zero-config in a lean package**. No multi-provider routing, no browser UI, no video.
+This project's niche: **GitHub cloning + Exa MCP zero-config in a lean package**, now exposed through a single `web` tool for simpler model tool-calling. No multi-provider routing, no browser UI, no video.

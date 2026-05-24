@@ -5,7 +5,6 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { fetchAllContent, type ExtractedContent } from "./extract.js";
 import { clearCloneCache } from "./github-extract.js";
 import { search } from "./search.js";
-import { executeCodeSearch } from "./code-search.js";
 import type { SearchResult } from "./types.js";
 import {
 	clearResults,
@@ -35,8 +34,6 @@ interface WebSearchConfig {
 const DEFAULT_SHORTCUTS = { activity: "ctrl+shift+w" };
 const MAX_INLINE_CONTENT = 30000;
 
-const pendingFetches = new Map<string, AbortController>();
-let sessionActive = false;
 let widgetVisible = false;
 let widgetUnsubscribe: (() => void) | null = null;
 
@@ -61,16 +58,6 @@ function loadConfigForExtensionInit(): WebSearchConfig {
 	}
 }
 
-function normalizeQueryList(queryList: unknown[]): string[] {
-	const normalized: string[] = [];
-	for (const query of queryList) {
-		if (typeof query !== "string") continue;
-		const trimmed = query.trim();
-		if (trimmed.length > 0) normalized.push(trimmed);
-	}
-	return normalized;
-}
-
 function formatSearchSummary(results: SearchResult[], answer: string): string {
 	let output = answer ? `${answer}\n\n---\n\n**Sources:**\n` : "";
 	output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n\n");
@@ -86,13 +73,6 @@ function formatFullResults(queryData: QueryResultData): string {
 		output += `### ${r.title}\n${r.url}\n\n`;
 	}
 	return output;
-}
-
-function abortPendingFetches(): void {
-	for (const controller of pendingFetches.values()) {
-		controller.abort();
-	}
-	pendingFetches.clear();
 }
 
 function updateWidget(ctx: ExtensionContext): void {
@@ -157,9 +137,7 @@ function formatEntryLine(
 }
 
 function handleSessionChange(ctx: ExtensionContext): void {
-	abortPendingFetches();
 	clearCloneCache();
-	sessionActive = true;
 	restoreFromSession(ctx);
 	widgetUnsubscribe?.();
 	widgetUnsubscribe = null;
@@ -168,51 +146,6 @@ function handleSessionChange(ctx: ExtensionContext): void {
 		widgetUnsubscribe = activityMonitor.onUpdate(() => updateWidget(ctx));
 		updateWidget(ctx);
 	}
-}
-
-function startBackgroundFetch(urls: string[]): string | null {
-	if (urls.length === 0) return null;
-	const fetchId = generateId();
-	const controller = new AbortController();
-	pendingFetches.set(fetchId, controller);
-	fetchAllContent(urls, controller.signal)
-		.then((fetched) => {
-			if (!sessionActive || !pendingFetches.has(fetchId)) return;
-			const data: StoredSearchData = {
-				id: fetchId,
-				type: "fetch",
-				timestamp: Date.now(),
-				urls: fetched,
-			};
-			storeResult(fetchId, data);
-			pi.appendEntry("web-search-results", data);
-			const ok = fetched.filter(f => !f.error).length;
-			pi.sendMessage(
-				{
-					customType: "web-search-content-ready",
-					content: `Content fetched for ${ok}/${fetched.length} URLs [${fetchId}]. Full page content now available.`,
-					display: true,
-				},
-				{ triggerTurn: true },
-			);
-		})
-		.catch((err) => {
-			if (!sessionActive || !pendingFetches.has(fetchId)) return;
-			const message = err instanceof Error ? err.message : String(err);
-			const isAbort = (err instanceof Error && err.name === "AbortError") || message.toLowerCase().includes("abort");
-			if (!isAbort) {
-				pi.sendMessage(
-					{
-						customType: "web-search-error",
-						content: `Content fetch failed [${fetchId}]: ${message}`,
-						display: true,
-					},
-					{ triggerTurn: false },
-				);
-			}
-		})
-		.finally(() => { pendingFetches.delete(fetchId); });
-	return fetchId;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -242,8 +175,6 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_tree", async (_event, ctx) => handleSessionChange(ctx));
 
 	pi.on("session_shutdown", () => {
-		sessionActive = false;
-		abortPendingFetches();
 		clearResults();
 		widgetUnsubscribe?.();
 		widgetUnsubscribe = null;
@@ -252,297 +183,115 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
-		name: "web_search",
-		label: "Web Search",
+		name: "web",
+		label: "Web",
 		description:
-			`Search the web using Exa. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query. When includeContent is true, full page content is fetched in the background.`,
+			"Single web tool. Use mode='search' to search by keywords, mode='read' to read one known URL, and mode='get' to retrieve a stored result by resultId.",
 		promptSnippet:
-			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
+			"Use this single tool for all web tasks: search = find sources, read = read a known URL, get = retrieve a stored result.",
 		parameters: Type.Object({
-			query: Type.Optional(Type.String({ description: "Single search query. For research tasks, prefer 'queries' with multiple varied angles instead." })),
-			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched in sequence, each returning its own synthesized answer." })),
-			numResults: Type.Optional(Type.Number({ description: "Results per query (default: 5, max: 20)" })),
-			includeContent: Type.Optional(Type.Boolean({ description: "Fetch full page content (async)" })),
-			recencyFilter: Type.Optional(
-				StringEnum(["day", "week", "month", "year"], { description: "Filter by recency" }),
-			),
-			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
+			mode: StringEnum(["search", "read", "get"], {
+				description: "search = find sources by query; read = read one known URL; get = retrieve a stored result by resultId.",
+			}),
+			query: Type.Optional(Type.String({ description: "For mode='search': one search query string." })),
+			numResults: Type.Optional(Type.Number({ description: "For mode='search': how many results to return (default: 5, max: 20)." })),
+			url: Type.Optional(Type.String({ description: "For mode='read': one known URL to read." })),
+			forceClone: Type.Optional(Type.Boolean({
+				description: "For mode='read' on GitHub repo URLs: force cloning even when the repo exceeds the size threshold.",
+			})),
+			resultId: Type.Optional(Type.String({ description: "For mode='get': resultId returned by an earlier web call." })),
 		}),
 
 		async execute(_toolCallId, params, signal, onUpdate) {
-			const rawQueryList: unknown[] = Array.isArray(params.queries)
-				? params.queries
-				: (params.query !== undefined ? [params.query] : []);
-			const queryList = normalizeQueryList(rawQueryList);
-
-			if (queryList.length === 0) {
-				return {
-					content: [{ type: "text", text: "Error: No query provided. Use 'query' or 'queries' parameter." }],
-					details: { error: "No query provided" },
-				};
-			}
-
-			const numResults = params.numResults != null ? Math.min(Math.max(1, Math.floor(params.numResults)), 20) : undefined;
-
-			const searchResults: QueryResultData[] = [];
-			const allUrls: string[] = [];
-			const allInlineContent: ExtractedContent[] = [];
-
-			for (let i = 0; i < queryList.length; i++) {
-				const query = queryList[i];
+			if (params.mode === "search") {
+				const query = typeof params.query === "string" ? params.query.trim() : "";
+				if (!query) {
+					return {
+						content: [{ type: "text", text: "Error: mode='search' requires query." }],
+						details: { mode: "search", error: "No query provided" },
+					};
+				}
 
 				onUpdate?.({
-					content: [{ type: "text", text: `Searching ${i + 1}/${queryList.length}: "${query}"...` }],
-					details: { phase: "search", progress: i / queryList.length, currentQuery: query },
+					content: [{ type: "text", text: `Searching for "${query}"...` }],
+					details: { mode: "search", phase: "search", progress: 0, currentQuery: query },
 				});
 
-				if (signal?.aborted) break;
-
 				try {
-					const { answer, results, inlineContent } = await search(query, {
-						numResults: numResults,
-						recencyFilter: params.recencyFilter,
-						domainFilter: params.domainFilter,
-						includeContent: params.includeContent,
+					const numResults = params.numResults != null ? Math.min(Math.max(1, Math.floor(params.numResults)), 20) : undefined;
+					const { answer, results } = await search(query, {
+						numResults,
 						signal,
 					});
+					const queryData: QueryResultData = { query, answer, results, error: null };
+					const resultId = generateId();
+					const searchData: StoredSearchData = {
+						id: resultId,
+						type: "search",
+						timestamp: Date.now(),
+						queries: [queryData],
+					};
+					storeResult(resultId, searchData);
+					pi.appendEntry("web-search-results", searchData);
 
-					searchResults.push({ query, answer, results, error: null });
-					for (const r of results) {
-						if (!allUrls.includes(r.url)) {
-							allUrls.push(r.url);
-						}
-					}
-					if (inlineContent) allInlineContent.push(...inlineContent);
+					let output = results.length === 0
+						? "No results found."
+						: formatSearchSummary(results, answer);
+					output += `
+
+---
+resultId: ${resultId}`;
+
+					return {
+						content: [{ type: "text", text: output.trim() }],
+						details: {
+							mode: "search",
+							query,
+							totalResults: results.length,
+							resultId,
+						},
+					};
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
-					searchResults.push({ query, answer: "", results: [], error: message });
+					return {
+						content: [{ type: "text", text: `Error: ${message}` }],
+						details: { mode: "search", error: message },
+					};
 				}
 			}
 
-			// Build output
-			const sc = searchResults.filter(r => !r.error).length;
-			let output = "";
-			for (const { query, answer, results, error } of searchResults) {
-				if (queryList.length > 1) {
-					output += `## Query: "${query}"\n\n`;
+			if (params.mode === "read") {
+				const url = typeof params.url === "string" ? params.url.trim() : "";
+				if (!url) {
+					return {
+						content: [{ type: "text", text: "Error: mode='read' requires url." }],
+						details: { mode: "read", error: "No URL provided" },
+					};
 				}
-				if (error) output += `Error: ${error}\n\n`;
-				else if (results.length === 0) output += "No results found.\n\n";
-				else output += formatSearchSummary(results, answer) + "\n\n";
-			}
 
-			// Handle content fetching
-			const includeContent = params.includeContent ?? false;
-			let fetchId: string | null = null;
-			const hasInlineReady = allInlineContent.length > 0 && allInlineContent.every(c => allUrls.includes(c.url));
-			if (hasInlineReady) {
-				fetchId = generateId();
+				onUpdate?.({
+					content: [{ type: "text", text: `Reading URL: ${url}` }],
+					details: { mode: "read", phase: "read", progress: 0 },
+				});
+
+				const fetchResults = await fetchAllContent([url], signal, {
+					forceClone: params.forceClone,
+				});
+				const result = fetchResults[0];
+				const resultId = generateId();
 				const data: StoredSearchData = {
-					id: fetchId,
+					id: resultId,
 					type: "fetch",
 					timestamp: Date.now(),
-					urls: allInlineContent,
+					urls: fetchResults,
 				};
-				storeResult(fetchId, data);
+				storeResult(resultId, data);
 				pi.appendEntry("web-search-results", data);
-				output += `---\nFull content for ${allInlineContent.length} sources available [${fetchId}].`;
-			} else if (includeContent) {
-				fetchId = startBackgroundFetch(allUrls);
-				if (fetchId) {
-					output += `---\nContent fetching in background [${fetchId}]. Will notify when ready.`;
-				}
-			}
 
-			// Store search results
-			const searchId = generateId();
-			const searchData: StoredSearchData = {
-				id: searchId,
-				type: "search",
-				timestamp: Date.now(),
-				queries: searchResults,
-			};
-			storeResult(searchId, searchData);
-			pi.appendEntry("web-search-results", searchData);
-
-			return {
-				content: [{ type: "text", text: output.trim() }],
-				details: {
-					queries: queryList,
-					queryCount: queryList.length,
-					successfulQueries: sc,
-					totalResults: searchResults.reduce((sum, r) => sum + r.results.length, 0),
-					includeContent,
-					fetchId,
-					fetchUrls: fetchId !== null && !hasInlineReady ? allUrls : undefined,
-					searchId,
-				},
-			};
-		},
-
-		renderCall(args, theme) {
-			const input = args as { query?: unknown; queries?: unknown };
-			const rawQueryList: unknown[] = Array.isArray(input.queries)
-				? input.queries
-				: (input.query !== undefined ? [input.query] : []);
-			const queryList = normalizeQueryList(rawQueryList);
-			if (queryList.length === 0) {
-				return new Text(theme.fg("toolTitle", theme.bold("search ")) + theme.fg("error", "(no query)"), 0, 0);
-			}
-			if (queryList.length === 1) {
-				const q = queryList[0];
-				const display = q.length > 60 ? q.slice(0, 57) + "..." : q;
-				return new Text(theme.fg("toolTitle", theme.bold("search ")) + theme.fg("accent", `"${display}"`), 0, 0);
-			}
-			const lines = [theme.fg("toolTitle", theme.bold("search ")) + theme.fg("accent", `${queryList.length} queries`)];
-			for (const q of queryList.slice(0, 5)) {
-				const display = q.length > 50 ? q.slice(0, 47) + "..." : q;
-				lines.push(theme.fg("muted", `  "${display}"`));
-			}
-			if (queryList.length > 5) {
-				lines.push(theme.fg("muted", `  ... and ${queryList.length - 5} more`));
-			}
-			return new Text(lines.join("\n"), 0, 0);
-		},
-
-		renderResult(result, { expanded, isPartial }, theme) {
-			const details = result.details as {
-				queryCount?: number;
-				successfulQueries?: number;
-				totalResults?: number;
-				error?: string;
-				fetchId?: string;
-				fetchUrls?: string[];
-				phase?: string;
-				progress?: number;
-				currentQuery?: string;
-			};
-
-			if (isPartial) {
-				const progress = details?.progress ?? 0;
-				const bar = "\u2588".repeat(Math.floor(progress * 10)) + "\u2591".repeat(10 - Math.floor(progress * 10));
-				const query = details?.currentQuery || "";
-				const display = query.length > 40 ? query.slice(0, 37) + "..." : query;
-				return new Text(theme.fg("accent", `[${bar}] ${display}`), 0, 0);
-			}
-
-			if (details?.error) {
-				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
-			}
-
-			let statusLine: string;
-			const queryInfo = details?.queryCount === 1 ? "" : `${details?.successfulQueries}/${details?.queryCount} queries, `;
-			statusLine = theme.fg("success", `${queryInfo}${details?.totalResults ?? 0} sources`);
-			if (details?.fetchId && details?.fetchUrls) {
-				statusLine += theme.fg("muted", ` (fetching ${details.fetchUrls.length} URLs)`);
-			} else if (details?.fetchId) {
-				statusLine += theme.fg("muted", " (content ready)");
-			}
-
-			if (!expanded) {
-				return new Text(statusLine, 0, 0);
-			}
-
-			const textContent = result.content.find((c) => c.type === "text")?.text || "";
-			const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
-			return new Text(statusLine + "\n" + theme.fg("dim", preview), 0, 0);
-		},
-	});
-
-	pi.registerTool({
-		name: "code_search",
-		label: "Code Search",
-		description: "Search for code examples, documentation, and API references via Exa MCP. No API key required.",
-		promptSnippet:
-			"Use for programming/API/library questions to retrieve concrete examples and docs.",
-		parameters: Type.Object({
-			query: Type.String({ description: "Programming question, API, library, or debugging topic to search for" }),
-			maxTokens: Type.Optional(Type.Integer({
-				minimum: 1000,
-				maximum: 50000,
-				description: "Maximum tokens of code/documentation context to return (default: 5000)",
-			})),
-		}),
-
-		async execute(toolCallId, params, signal) {
-			return executeCodeSearch(toolCallId, params, signal);
-		},
-
-		renderCall(args, theme) {
-			const { query } = args as { query?: string };
-			const display = !query
-				? "(no query)"
-				: query.length > 70 ? query.slice(0, 67) + "..." : query;
-			return new Text(theme.fg("toolTitle", theme.bold("code_search ")) + theme.fg("accent", display), 0, 0);
-		},
-
-		renderResult(result, { expanded }, theme) {
-			const details = result.details as { query?: string; maxTokens?: number; error?: string };
-			if (details?.error) {
-				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
-			}
-
-			const summary = theme.fg("success", "code context returned") +
-				theme.fg("muted", ` (${details?.maxTokens ?? 5000} tokens max)`);
-			if (!expanded) return new Text(summary, 0, 0);
-
-			const textContent = result.content.find((c) => c.type === "text")?.text || "";
-			const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
-			return new Text(summary + "\n" + theme.fg("dim", preview), 0, 0);
-		},
-	});
-
-	pi.registerTool({
-		name: "fetch_content",
-		label: "Fetch Content",
-		description: "Fetch URL(s) and extract readable content as markdown. Supports GitHub repository contents and regular web pages. Uses Readability extraction with Jina Reader fallback for JS-rendered pages.",
-		promptSnippet:
-			"Use to extract readable content from URL(s) or GitHub repos.",
-		parameters: Type.Object({
-			url: Type.Optional(Type.String({ description: "Single URL to fetch" })),
-			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel)" })),
-			forceClone: Type.Optional(Type.Boolean({
-				description: "Force cloning large GitHub repositories that exceed the size threshold",
-			})),
-		}),
-
-		async execute(_toolCallId, params, signal, onUpdate) {
-			const urlList = (params.urls ?? (params.url ? [params.url] : []))
-				.filter((u: unknown) => typeof u === "string" && u.trim().length > 0) as string[];
-			if (urlList.length === 0) {
-				return {
-					content: [{ type: "text", text: "Error: No URL provided." }],
-					details: { error: "No URL provided" },
-				};
-			}
-
-			onUpdate?.({
-				content: [{ type: "text", text: `Fetching ${urlList.length} URL(s)...` }],
-				details: { phase: "fetch", progress: 0 },
-			});
-
-			const fetchResults = await fetchAllContent(urlList, signal, {
-				forceClone: params.forceClone,
-			});
-			const successful = fetchResults.filter((r) => !r.error).length;
-			const totalChars = fetchResults.reduce((sum, r) => sum + r.content.length, 0);
-
-			const responseId = generateId();
-			const data: StoredSearchData = {
-				id: responseId,
-				type: "fetch",
-				timestamp: Date.now(),
-				urls: fetchResults,
-			};
-			storeResult(responseId, data);
-			pi.appendEntry("web-search-results", data);
-
-			if (urlList.length === 1) {
-				const result = fetchResults[0];
 				if (result.error) {
 					return {
 						content: [{ type: "text", text: `Error: ${result.error}` }],
-						details: { urls: urlList, urlCount: 1, successful: 0, error: result.error, responseId },
+						details: { mode: "read", error: result.error, url, resultId },
 					};
 				}
 
@@ -551,266 +300,159 @@ export default function (pi: ExtensionAPI) {
 				let output = truncated
 					? result.content.slice(0, MAX_INLINE_CONTENT) + "\n\n[Content truncated...]"
 					: result.content;
-
 				if (truncated) {
-					output += `\n\n---\nShowing ${MAX_INLINE_CONTENT} of ${fullLength} chars. ` +
-						`Use get_search_content({ responseId: "${responseId}", urlIndex: 0 }) for full content.`;
+					output += `
+
+---
+Showing ${MAX_INLINE_CONTENT} of ${fullLength} chars.`;
 				}
+				output += `
+
+---
+resultId: ${resultId}`;
 
 				return {
 					content: [{ type: "text", text: output }],
 					details: {
-						urls: urlList,
-						urlCount: 1,
-						successful: 1,
-						totalChars: fullLength,
+						mode: "read",
+						url,
 						title: result.title,
-						responseId,
+						totalChars: fullLength,
 						truncated,
+						resultId,
 					},
 				};
 			}
 
-			let output = "## Fetched URLs\n\n";
-			for (const { url, title, content, error } of fetchResults) {
-				if (error) {
-					output += `- ${url}: Error - ${error}\n`;
-				} else {
-					output += `- ${title || url} (${content.length} chars)\n`;
-				}
-			}
-			output += `\n---\nUse get_search_content({ responseId: "${responseId}", urlIndex: 0 }) to retrieve full content.`;
-
-			return {
-				content: [{ type: "text", text: output }],
-				details: { urls: urlList, urlCount: urlList.length, successful, totalChars, responseId },
-			};
-		},
-
-		renderCall(args, theme) {
-			const { url, urls } = args as { url?: string; urls?: string[] };
-			const urlList = urls ?? (url ? [url] : []);
-			if (urlList.length === 0) {
-				return new Text(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("error", "(no URL)"), 0, 0);
-			}
-			const lines: string[] = [];
-			if (urlList.length === 1) {
-				const display = urlList[0].length > 60 ? urlList[0].slice(0, 57) + "..." : urlList[0];
-				lines.push(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", display));
-			} else {
-				lines.push(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", `${urlList.length} URLs`));
-				for (const u of urlList.slice(0, 5)) {
-					const display = u.length > 60 ? u.slice(0, 57) + "..." : u;
-					lines.push(theme.fg("muted", "  " + display));
-				}
-				if (urlList.length > 5) {
-					lines.push(theme.fg("muted", `  ... and ${urlList.length - 5} more`));
-				}
-			}
-			return new Text(lines.join("\n"), 0, 0);
-		},
-
-		renderResult(result, { expanded, isPartial }, theme) {
-			const details = result.details as {
-				urlCount?: number;
-				successful?: number;
-				totalChars?: number;
-				error?: string;
-				title?: string;
-				truncated?: boolean;
-				responseId?: string;
-				phase?: string;
-				progress?: number;
-			};
-
-			if (isPartial) {
-				const progress = details?.progress ?? 0;
-				const bar = "\u2588".repeat(Math.floor(progress * 10)) + "\u2591".repeat(10 - Math.floor(progress * 10));
-				return new Text(theme.fg("accent", `[${bar}] ${details?.phase || "fetching"}`), 0, 0);
+			const resultId = typeof params.resultId === "string" ? params.resultId.trim() : "";
+			if (!resultId) {
+				return {
+					content: [{ type: "text", text: "Error: mode='get' requires resultId." }],
+					details: { mode: "get", error: "No resultId provided" },
+				};
 			}
 
-			if (details?.error) {
-				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
-			}
-
-			if (details?.urlCount === 1) {
-				const title = details?.title || "Untitled";
-				let statusLine = theme.fg("success", title) + theme.fg("muted", ` (${details?.totalChars ?? 0} chars)`);
-				if (details?.truncated) {
-					statusLine += theme.fg("warning", " [truncated]");
-				}
-				const textContent = result.content.find((c) => c.type === "text")?.text || "";
-				if (!expanded) {
-					const brief = textContent.length > 200 ? textContent.slice(0, 200) + "..." : textContent;
-					return new Text(statusLine + "\n" + theme.fg("dim", brief), 0, 0);
-				}
-				const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
-				return new Text(statusLine + "\n" + theme.fg("dim", preview), 0, 0);
-			}
-
-			const countColor = (details?.successful ?? 0) > 0 ? "success" : "error";
-			const statusLine = theme.fg(countColor, `${details?.successful}/${details?.urlCount} URLs`) + theme.fg("muted", " (content stored)");
-			if (!expanded) {
-				return new Text(statusLine, 0, 0);
-			}
-			const textContent = result.content.find((c) => c.type === "text")?.text || "";
-			const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
-			return new Text(statusLine + "\n" + theme.fg("dim", preview), 0, 0);
-		},
-	});
-
-	pi.registerTool({
-		name: "get_search_content",
-		label: "Get Search Content",
-		description: "Retrieve full content from a previous web_search or fetch_content call.",
-		promptSnippet:
-			"Use after web_search/fetch_content when full stored content is needed via responseId.",
-		parameters: Type.Object({
-			responseId: Type.String({ description: "The responseId from web_search or fetch_content" }),
-			query: Type.Optional(Type.String({ description: "Get content for this query (web_search)" })),
-			queryIndex: Type.Optional(Type.Number({ description: "Get content for query at index" })),
-			url: Type.Optional(Type.String({ description: "Get content for this URL" })),
-			urlIndex: Type.Optional(Type.Number({ description: "Get content for URL at index" })),
-		}),
-
-		async execute(_toolCallId, params) {
-			const data = getResult(params.responseId);
+			const data = getResult(resultId);
 			if (!data) {
 				return {
-					content: [{ type: "text", text: `Error: No stored results for "${params.responseId}"` }],
-					details: { error: "Not found", responseId: params.responseId },
+					content: [{ type: "text", text: `Error: No stored results for "${resultId}"` }],
+					details: { mode: "get", error: "Not found", resultId },
 				};
 			}
 
 			if (data.type === "search" && data.queries) {
-				let queryData: QueryResultData | undefined;
+				const sections = data.queries.map((queryData, index) => {
+					if (queryData.error) {
+						return `## Query ${index + 1}: "${queryData.query}"
 
-				if (params.query !== undefined) {
-					queryData = data.queries.find((q) => q.query === params.query);
-					if (!queryData) {
-						const available = data.queries.map((q) => `"${q.query}"`).join(", ");
-						return {
-							content: [{ type: "text", text: `Query "${params.query}" not found. Available: ${available}` }],
-							details: { error: "Query not found" },
-						};
+Error: ${queryData.error}`;
 					}
-				} else if (params.queryIndex !== undefined) {
-					queryData = data.queries[params.queryIndex];
-					if (!queryData) {
-						return {
-							content: [{ type: "text", text: `Index ${params.queryIndex} out of range (0-${data.queries.length - 1})` }],
-							details: { error: "Index out of range" },
-						};
-					}
-				} else {
-					const available = data.queries.map((q, i) => `${i}: "${q.query}"`).join(", ");
-					return {
-						content: [{ type: "text", text: `Specify query or queryIndex. Available: ${available}` }],
-						details: { error: "No query specified" },
-					};
-				}
+					return data.queries.length > 1
+						? `## Query ${index + 1}: "${queryData.query}"
 
-				if (queryData.error) {
-					return {
-						content: [{ type: "text", text: `Error for "${queryData.query}": ${queryData.error}` }],
-						details: { error: queryData.error, query: queryData.query },
-					};
-				}
-
+${formatFullResults(queryData)}`
+						: formatFullResults(queryData);
+				}).join("\n\n");
+				const totalResults = data.queries.reduce((sum, q) => sum + q.results.length, 0);
 				return {
-					content: [{ type: "text", text: formatFullResults(queryData) }],
-					details: { query: queryData.query, resultCount: queryData.results.length },
+					content: [{ type: "text", text: sections }],
+					details: {
+						mode: "get",
+						sourceType: "search",
+						queryCount: data.queries.length,
+						resultCount: totalResults,
+						resultId,
+					},
 				};
 			}
 
 			if (data.type === "fetch" && data.urls) {
-				let urlData: ExtractedContent | undefined;
+				const sections = data.urls.map((urlData) => {
+					if (urlData.error) {
+						return `# ${urlData.title || urlData.url}
 
-				if (params.url !== undefined) {
-					urlData = data.urls.find((u) => u.url === params.url);
-					if (!urlData) {
-						const available = data.urls.map((u) => u.url).join("\n  ");
-						return {
-							content: [{ type: "text", text: `URL not found. Available:\n  ${available}` }],
-							details: { error: "URL not found" },
-						};
+Error: ${urlData.error}`;
 					}
-				} else if (params.urlIndex !== undefined) {
-					urlData = data.urls[params.urlIndex];
-					if (!urlData) {
-						return {
-							content: [{ type: "text", text: `Index ${params.urlIndex} out of range (0-${data.urls.length - 1})` }],
-							details: { error: "Index out of range" },
-						};
-					}
-				} else {
-					const available = data.urls.map((u, i) => `${i}: ${u.url}`).join("\n  ");
-					return {
-						content: [{ type: "text", text: `Specify url or urlIndex. Available:\n  ${available}` }],
-						details: { error: "No URL specified" },
-					};
-				}
+					return `# ${urlData.title || urlData.url}
 
-				if (urlData.error) {
-					return {
-						content: [{ type: "text", text: `Error for ${urlData.url}: ${urlData.error}` }],
-						details: { error: urlData.error, url: urlData.url },
-					};
-				}
-
+${urlData.content}`;
+				}).join("\n\n---\n\n");
+				const totalChars = data.urls.reduce((sum, u) => sum + u.content.length, 0);
 				return {
-					content: [{ type: "text", text: `# ${urlData.title}\n\n${urlData.content}` }],
-					details: { url: urlData.url, title: urlData.title, contentLength: urlData.content.length },
+					content: [{ type: "text", text: sections }],
+					details: {
+						mode: "get",
+						sourceType: "read",
+						urlCount: data.urls.length,
+						totalChars,
+						resultId,
+					},
 				};
 			}
 
 			return {
 				content: [{ type: "text", text: "Invalid stored data format" }],
-				details: { error: "Invalid data" },
+				details: { mode: "get", error: "Invalid data", resultId },
 			};
 		},
 
 		renderCall(args, theme) {
-			const { responseId, query, queryIndex, url, urlIndex } = args as {
-				responseId: string;
+			const { mode, query, url, resultId } = args as {
+				mode?: string;
 				query?: string;
-				queryIndex?: number;
 				url?: string;
-				urlIndex?: number;
+				resultId?: string;
 			};
 			let target = "";
-			if (query) target = `query="${query}"`;
-			else if (queryIndex !== undefined) target = `queryIndex=${queryIndex}`;
-			else if (url) target = url.length > 30 ? url.slice(0, 27) + "..." : url;
-			else if (urlIndex !== undefined) target = `urlIndex=${urlIndex}`;
-			return new Text(theme.fg("toolTitle", theme.bold("get_content ")) + theme.fg("accent", target || responseId.slice(0, 8)), 0, 0);
+			if (mode === "search") target = query || "(no query)";
+			else if (mode === "read") target = url || "(no URL)";
+			else if (mode === "get") target = resultId || "(no resultId)";
+			const display = target.length > 60 ? target.slice(0, 57) + "..." : target;
+			return new Text(theme.fg("toolTitle", theme.bold("web ")) + theme.fg("accent", `${mode || "?"} ${display}`), 0, 0);
 		},
 
-		renderResult(result, { expanded }, theme) {
+		renderResult(result, { expanded, isPartial }, theme) {
 			const details = result.details as {
-				error?: string;
+				mode?: string;
+				sourceType?: string;
 				query?: string;
-				url?: string;
 				title?: string;
+				totalResults?: number;
 				resultCount?: number;
-				contentLength?: number;
+				queryCount?: number;
+				urlCount?: number;
+				totalChars?: number;
+				truncated?: boolean;
+				resultId?: string;
+				error?: string;
+				phase?: string;
 			};
 
+			if (isPartial) {
+				return new Text(theme.fg("accent", details?.phase || "working..."), 0, 0);
+			}
 			if (details?.error) {
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
 
-			let statusLine: string;
-			if (details?.query) {
-				statusLine = theme.fg("success", `"${details.query}"`) + theme.fg("muted", ` (${details.resultCount} results)`);
-			} else {
-				statusLine = theme.fg("success", details?.title || "Content") + theme.fg("muted", ` (${details?.contentLength ?? 0} chars)`);
+			let statusLine = theme.fg("success", details?.mode || "web");
+			if (details?.mode === "search") {
+				statusLine += theme.fg("muted", ` (${details.totalResults ?? 0} sources)`);
+			} else if (details?.mode === "read") {
+				statusLine += theme.fg("muted", ` (${details.totalChars ?? 0} chars)`);
+				if (details?.truncated) statusLine += theme.fg("warning", " [truncated]");
+			} else if (details?.mode === "get" && details?.sourceType === "search") {
+				statusLine += theme.fg("muted", ` (${details.queryCount ?? 0} queries, ${details.resultCount ?? 0} results)`);
+			} else if (details?.mode === "get" && details?.sourceType === "read") {
+				statusLine += theme.fg("muted", ` (${details.urlCount ?? 0} URLs, ${details.totalChars ?? 0} chars)`);
+			}
+			if (details?.resultId) {
+				statusLine += theme.fg("dim", ` [${details.resultId.slice(0, 8)}]`);
 			}
 
 			if (!expanded) {
 				return new Text(statusLine, 0, 0);
 			}
-
 			const textContent = result.content.find((c) => c.type === "text")?.text || "";
 			const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
 			return new Text(statusLine + "\n" + theme.fg("dim", preview), 0, 0);
@@ -818,12 +460,12 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("search", {
-		description: "Browse stored web search results",
+		description: "Browse stored web results",
 		handler: async (_args, ctx) => {
 			const results = getAllResults();
 
 			if (results.length === 0) {
-				ctx.ui.notify("No stored search results", "info");
+				ctx.ui.notify("No stored web results", "info");
 				return;
 			}
 
@@ -835,12 +477,12 @@ export default function (pi: ExtensionAPI) {
 					return `[${r.id.slice(0, 6)}] "${query}" (${r.queries.length} queries) - ${ageStr}`;
 				}
 				if (r.type === "fetch" && r.urls) {
-					return `[${r.id.slice(0, 6)}] ${r.urls.length} URLs fetched - ${ageStr}`;
+					return `[${r.id.slice(0, 6)}] ${r.urls.length} URLs read - ${ageStr}`;
 				}
 				return `[${r.id.slice(0, 6)}] ${r.type} - ${ageStr}`;
 			});
 
-			const choice = await ctx.ui.select("Stored Search Results", options);
+			const choice = await ctx.ui.select("Stored Web Results", options);
 			if (!choice) return;
 
 			const match = choice.match(/^\[([a-z0-9]+)\]/);

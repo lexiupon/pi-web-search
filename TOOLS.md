@@ -2,59 +2,38 @@
 
 Detailed parameter reference and usage examples for all tools provided by Pi Web Search.
 
-## web_search
+## web
 
-Search the web via Exa. Returns an AI-synthesized answer with source citations.
+Single web tool.
+
+- `mode: "search"` — search the web from query terms to discover sources
+- `mode: "read"` — read one known URL and extract readable text/markdown
+- `mode: "get"` — retrieve a stored result from an earlier `web` call by `resultId`
 
 ```typescript
-web_search({ query: "TypeScript best practices 2025" })
-web_search({ queries: ["query 1", "query 2"] })
-web_search({ query: "latest news", numResults: 10, recencyFilter: "week" })
-web_search({ query: "...", domainFilter: ["github.com"] })
-web_search({ query: "...", includeContent: true })
+web({ mode: "search", query: "TypeScript best practices 2025" })
+web({ mode: "search", query: "latest news", numResults: 10 })
+web({ mode: "read", url: "https://example.com/article" })
+web({ mode: "read", url: "https://github.com/owner/repo" })
+web({ mode: "get", resultId: "abc123" })
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `query` | `string` | Single search query. For research tasks, prefer `queries` with multiple varied angles instead. |
-| `queries` | `string[]` | Multiple queries searched in sequence, each returning its own synthesized answer. |
-| `numResults` | `number` | Results per query (default: 5, max: 20) |
-| `recencyFilter` | `string` | Filter by recency: `day`, `week`, `month`, or `year` |
-| `domainFilter` | `string[]` | Limit to specific domains (prefix with `-` to exclude, e.g. `["-twitter.com"]`) |
-| `includeContent` | `boolean` | Fetch full page content from sources in background |
+| `mode` | `"search" \| "read" \| "get"` | Selects the operation |
+| `query` | `string` | For `mode: "search"`: one search query string |
+| `numResults` | `number` | For `mode: "search"`: how many search results to return (default: 5, max: 20) |
+| `url` | `string` | For `mode: "read"`: one known URL to read |
+| `forceClone` | `boolean` | For `mode: "read"` on GitHub repo URLs: force cloning large repositories |
+| `resultId` | `string` | For `mode: "get"`: stored result id from an earlier `web` call |
 
-**Tips:** For comprehensive research, use 2-4 varied queries instead of one broad query. Each query gets its own synthesized answer.
+### Search mode
 
-## code_search
+Use when you have keywords and need to discover sources.
 
-Search for code examples, documentation, and API references via Exa MCP. No API key required.
+### Read mode
 
-```typescript
-code_search({ query: "React useEffect cleanup pattern" })
-code_search({ query: "Express middleware error handling", maxTokens: 10000 })
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `query` | `string` | Programming question, API, library, or debugging topic to search for |
-| `maxTokens` | `number` | Maximum tokens of code/documentation context to return (default: 5000, max: 50000) |
-
-## fetch_content
-
-Fetch URL(s) and extract readable content as markdown. Automatically detects and handles GitHub repos, PDFs, and regular web pages.
-
-```typescript
-fetch_content({ url: "https://example.com/article" })
-fetch_content({ urls: ["url1", "url2", "url3"] })
-fetch_content({ url: "https://github.com/owner/repo" })
-fetch_content({ url: "https://example.com/doc.pdf" })
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `url` | `string` | Single URL to fetch |
-| `urls` | `string[]` | Multiple URLs (fetched in parallel) |
-| `forceClone` | `boolean` | Force cloning large GitHub repositories that exceed the size threshold |
+Use when you already have a URL and want the page/repo/PDF contents.
 
 **GitHub repos:** GitHub URLs are cloned locally instead of scraped. The agent gets real file contents and a local path to explore with `read` and `bash`. Root URLs return the repo tree + README, `/tree/` paths return directory listings, `/blob/` paths return file contents. Repos over 350MB get a lightweight API-based view (override with `forceClone: true`).
 
@@ -62,27 +41,13 @@ fetch_content({ url: "https://example.com/doc.pdf" })
 
 **Fallback chain:** Readability → RSC parser (Next.js) → Jina Reader (JS-rendered pages). Handles SPAs, JS-heavy pages, and anti-bot protections transparently.
 
-## get_search_content
+### Get mode
 
-Retrieve stored content from previous `web_search` or `fetch_content` calls. Content over 30,000 chars is truncated in tool responses but stored in full for retrieval here.
-
-```typescript
-get_search_content({ responseId: "abc123", urlIndex: 0 })
-get_search_content({ responseId: "abc123", url: "https://..." })
-get_search_content({ responseId: "abc123", query: "original query" })
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `responseId` | `string` | The response ID from a previous `web_search` or `fetch_content` call |
-| `query` | `string` | Get content for this specific query (from `web_search` results) |
-| `queryIndex` | `number` | Get content for query at this index (0-based) |
-| `url` | `string` | Get content for this specific URL (from `fetch_content` results) |
-| `urlIndex` | `number` | Get content for URL at this index (0-based) |
+Use after a previous `web(...)` call returns a `resultId` and you want to reload the stored result from the current session.
 
 ## /search
 
-Interactive command to browse stored search results from the current session. Lists all results with their response IDs for easy retrieval. Supports viewing details and deleting results.
+Interactive command to browse stored web results from the current session. Lists all results with their ids for easy retrieval. Supports viewing details and deleting results.
 
 ```
 /search

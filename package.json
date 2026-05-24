@@ -1,7 +1,7 @@
 {
   "name": "@alexion42/pi-web-search",
-  "version": "0.1.1",
-  "description": "Exa-powered web search and content extraction for Pi coding agent",
+  "version": "0.2.0",
+  "description": "Single-tool Exa-powered web search and URL reading for Pi coding agent",
   "type": "module",
   "scripts": {
     "test": "node --test"
@@ -20,12 +20,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nicobailon/pi-web-access.git"
+    "url": "git+https://github.com/lexiupon/pi-web-search.git"
   },
   "bugs": {
-    "url": "https://github.com/nicobailon/pi-web-access/issues"
+    "url": "https://github.com/lexiupon/pi-web-search/issues"
   },
-  "homepage": "https://github.com/nicobailon/pi-web-access#readme",
+  "homepage": "https://github.com/lexiupon/pi-web-search#readme",
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
     "linkedom": "^0.18.12",
@@ -42,5 +42,12 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "files": [
+    "*.ts",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "TOOLS.md"
+  ]
 }
