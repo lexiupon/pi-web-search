@@ -1,0 +1,38 @@
+{
+  "nextId": 4,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Rewrite README.md",
+      "description": "Rewrite README with new structure: title + one-liner, install upfront, brief \"What's Available\" bullet list, minimal config section, flow diagram, limitations, comparison table at end. Remove banner image.",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1779616591068,
+      "updatedAt": 1779616644726
+    },
+    {
+      "id": "2",
+      "subject": "Create TOOLS.md with detailed tool docs",
+      "description": "Move all detailed tool parameter tables and usage examples from README into a new TOOLS.md doc. Cover: web_search, code_search, fetch_content, get_search_content, /search command, activity monitor.",
+      "status": "in_progress",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1779616591071,
+      "updatedAt": 1779616644732
+    },
+    {
+      "id": "3",
+      "subject": "Update CHANGELOG.md with clean v0.1.0",
+      "description": "Replace the massive upstream changelog with a clean v0.1.0 entry noting the fork from nicobailon/pi-web-access and what was stripped/kept.",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1779616591074,
+      "updatedAt": 1779616663742
+    }
+  ]
+}
