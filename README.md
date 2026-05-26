@@ -19,7 +19,7 @@ Works immediately with no API keys — Exa MCP provides zero-config search. For 
 }
 ```
 
-Requires Pi v0.37.3+.
+Requires a recent Pi release using the `@earendil-works/pi-*` package namespace.
 
 ## What's Available
 

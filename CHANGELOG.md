@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-05-26
+
+- Replaced deprecated `@mariozechner/pi-*` peer dependencies and imports with `@earendil-works/pi-*`
+- Bumped Pi package peer dependency floor to `^0.75.5` to align with the current package namespace
+- Refreshed package metadata for a warning-free release install
+
 ## [0.2.0] - 2026-05-24
 
 - Replaced multiple overlapping LLM-facing tools with a single `web` tool
