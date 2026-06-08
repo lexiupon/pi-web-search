@@ -1,6 +1,6 @@
 {
   "name": "@alexion42/pi-web-search",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Single-tool Exa-powered web search and URL reading for Pi coding agent",
   "type": "module",
   "scripts": {
@@ -34,9 +34,9 @@
     "unpdf": "^1.6.2"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "^0.75.5",
-    "@earendil-works/pi-coding-agent": "^0.75.5",
-    "@earendil-works/pi-tui": "^0.75.5"
+    "@earendil-works/pi-ai": "^0.79.0",
+    "@earendil-works/pi-coding-agent": "^0.79.0",
+    "@earendil-works/pi-tui": "^0.79.0"
   },
   "pi": {
     "extensions": [

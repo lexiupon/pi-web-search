@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-06-08
+
+- Raised the Pi peer dependency floor from `^0.75.5` to `^0.79.0`
+- Refreshed the locked Pi dependency tree, including agent core, TUI, and clipboard packages
+- Verified the extension against Pi `0.79.0`
+
 ## [0.2.1] - 2026-05-26
 
 - Replaced deprecated `@mariozechner/pi-*` peer dependencies and imports with `@earendil-works/pi-*`
