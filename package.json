@@ -1,6 +1,6 @@
 {
   "name": "@alexion42/pi-web-search",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Single-tool Exa-powered web search and URL reading for Pi coding agent",
   "type": "module",
   "scripts": {
