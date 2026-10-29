@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-10-29
+
+- Published under the house scope as `@lexiupon/pi-web-search`; `@alexion42/pi-web-search` is
+  deprecated (not unpublished) and points here.
+- Authorship corrected: `author` credits Nico Bailon, author of the upstream this is forked from
+  (see [UPSTREAM](UPSTREAM)); this fork's work is recorded in `contributors`. `LICENSE` unchanged.
+- Added `UPSTREAM` recording the fork base; `publishConfig.access` set; the committed `.tgz` build
+  artifact dropped from the tree.
+
 ## [0.2.2] - 2026-06-08
 
 - Raised the Pi peer dependency floor from `^0.75.5` to `^0.79.0`

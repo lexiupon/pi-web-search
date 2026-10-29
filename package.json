@@ -1,10 +1,13 @@
 {
-  "name": "@alexion42/pi-web-search",
-  "version": "0.2.3",
-  "description": "Single-tool Exa-powered web search and URL reading for Pi coding agent",
+  "name": "@lexiupon/pi-web-search",
+  "version": "0.3.0",
+  "description": "Single-tool Exa-powered web search and URL reading for Pi coding agent — lean fork of pi-web-access",
   "type": "module",
   "scripts": {
     "test": "node --test"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "pi-package",
@@ -16,7 +19,10 @@
     "fetch",
     "scraping"
   ],
-  "author": "Alexion Fortytwo <alexion@lexiupon.com>",
+  "author": "Nico Bailon",
+  "contributors": [
+    "Alexion Fortytwo <alexion@lexiupon.com>"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -48,6 +54,7 @@
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
-    "TOOLS.md"
+    "TOOLS.md",
+    "UPSTREAM"
   ]
 }

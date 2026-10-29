@@ -2,13 +2,13 @@
 
 Lean web search for Pi, powered by Exa. A lean fork of [nicobailon/pi-web-access](https://github.com/nicobailon/pi-web-access).
 
-[![npm version](https://img.shields.io/npm/v/@alexion42/pi-web-search?style=for-the-badge)](https://www.npmjs.com/package/@alexion42/pi-web-search)
+[![npm version](https://img.shields.io/npm/v/@lexiupon/pi-web-search?style=for-the-badge)](https://www.npmjs.com/package/@lexiupon/pi-web-search)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 ## Install
 
 ```bash
-pi install npm:@alexion42/pi-web-search
+pi install npm:@lexiupon/pi-web-search
 ```
 
 Works immediately with no API keys — Exa MCP provides zero-config search. For direct API access, add your key to `~/.pi/web-search.json`:

@@ -1,0 +1,17 @@
+# Upstream
+
+Fork of [nicobailon/pi-web-access](https://github.com/nicobailon/pi-web-access) (MIT, © Nico
+Bailon), taken at upstream tag **v0.10.7** = commit
+`076bf0db5e739b200286ca37486e4edd8d19123c` (2026-05-02). Our history is squashed from there, so
+updates from upstream are a manual port, not a merge.
+
+**Byte-identical to upstream at the fork point:** `LICENSE`, `activity.ts`, `banner.png`,
+`github-extract.ts`, `pdf-extract.ts`, `rsc-extract.ts`, `utils.ts`, `test/pdf-extract.test.mjs`.
+
+**Modified by us:** `index.ts` (one `web` tool with `search` / `read` / `get` modes, simplified
+prompts and schemas), `extract.ts`, `exa.ts`, `github-api.ts`, `storage.ts`.
+
+**Added by us:** `search.ts`, `types.ts`, `TOOLS.md`.
+
+Upstream has since grown past 110 files to v0.46.0 (2026-10-28). Reconciling with upstream is a
+separate activity.
